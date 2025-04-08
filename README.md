@@ -5,7 +5,7 @@ Crack wps wifi
 * pkg update && pkg upgrade -y
 * pkg install root-repo -y
 * pkg install python-pip
-* pip install pycryptodome
+* pip install pycryptodome (hoặc pip install pybase64)
 * pkg install git tsu python wpa-supplicant pixiewps iw openssl -y
 * git clone https://github.com/lilknighthood/thoitiet.git
 * cd thoitiet
