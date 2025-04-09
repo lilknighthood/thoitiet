@@ -11,4 +11,4 @@ Crack wps wifi
 * cd thoitiet
 * chmod +x thoitiet.py
 * sudo python thoitiet.py -i wlan0 -K
-(Ở bước cuối cùng, nhớ tắt wifi khi scan wifi)
+* (Ở bước cuối cùng, nhớ tắt wifi khi scan wifi)
