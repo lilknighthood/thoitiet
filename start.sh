@@ -24,5 +24,3 @@ chmod +x thoitiet.py
 
 echo "=== Chạy ứng dụng ==="
 sudo python thoitiet.py -i wlan0 -K
-
-echo "=== Hoàn thành ==="
