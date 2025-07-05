@@ -11,8 +11,8 @@ chmod +x wifi.sh
 ```sh
 ./wifi.sh
 ```
-- Lần sau chỉ cần vào termux, gõ lệnh này để sử dụng:
-- 1.
+- Lần sau chỉ cần vào termux, gõ lệnh này để sử dụng:\
+1. 
 ```sh
 cd thoitiet
 ```
