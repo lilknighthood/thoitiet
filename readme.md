@@ -15,3 +15,8 @@ cd thoitiet
 ```sh
 sudo python thoitiet.py -i wlan0 -K
 ```
+hoặc
+```sh
+sudo python thoitietv2.py -i wlan0 -K
+```
+
