@@ -1,4 +1,4 @@
-Copy lần lượt các code sau vào termux để thực hiện.
+Copy lần lượt các code sau vào termux để thực hiện.\
 1.
 ```sh
 curl -o wifi.sh https://raw.githubusercontent.com/lilknighthood/thoitiet/refs/heads/main/wifi.sh
