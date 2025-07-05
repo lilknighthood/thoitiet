@@ -1,8 +1,14 @@
-pkg update && pkg upgrade -y
-pkg install root-repo -y
+#!/data/data/com.termux/files/usr/bin/bash
+
+yes | pkg update
+yes | pkg upgrade
+yes | pkg install python
+yes | pkg install pip
+yes | pkg install root-repo
+pip install --upgrade pip
 pip install pycryptodome
-pip install psutil (nếu sài thoitietv2.py)
-pkg install git tsu python wpa-supplicant pixiewps iw openssl -y
+pip install psutil
+yes | pkg install git tsu wpa-supplicant pixiewps iw openssl
 git clone https://github.com/lilknighthood/thoitiet.git
 cd thoitiet
 chmod +x thoitiet.py
