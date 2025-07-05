@@ -7,3 +7,10 @@ chmod +x wifi.sh
 ```sh
 ./wifi.sh
 ```
+- Lần sau chỉ cần vào termux, gõ lệnh này để sử dụng:
+```sh
+cd thoitiet
+```
+```sh
+sudo python thoitiet.py -i wlan0 -K
+```
