@@ -827,43 +827,31 @@ class Companion:
     def __del__(self):
         self.cleanup()
 
-
 class WiFiScanner:
-    """docstring for WiFiScanner"""
     def __init__(self, interface, vuln_list=None):
         self.interface = interface
         self.vuln_list = vuln_list
-
         reports_fname = os.path.dirname(os.path.realpath(__file__)) + '/reports/stored.csv'
         try:
             with open(reports_fname, 'r', newline='', encoding='utf-8', errors='replace') as file:
                 csvReader = csv.reader(file, delimiter=';', quoting=csv.QUOTE_ALL)
-                # Skip header
                 next(csvReader)
                 self.stored = []
                 for row in csvReader:
-                    self.stored.append(
-                        (
-                            row[1],   # BSSID
-                            row[2]    # ESSID
-                        )
-                    )
+                    self.stored.append((row[1], row[2]))
         except FileNotFoundError:
             self.stored = []
 
-    def iw_scanner(self) -> Dict[int, dict]:
-        """Parsing iw scan results"""
+    def iw_scanner(self) -> dict:
         def handle_network(line, result, networks):
-            networks.append(
-                    {
-                        'Security type': 'Unknown',
-                        'WPS': False,
-                        'WPS locked': False,
-                        'Model': '',
-                        'Model number': '',
-                        'Device name': ''
-                     }
-                )
+            networks.append({
+                'Security type': 'Unknown',
+                'WPS': False,
+                'WPS locked': False,
+                'Model': '',
+                'Model number': '',
+                'Device name': ''
+            })
             networks[-1]['BSSID'] = result.group(1).upper()
 
         def handle_essid(line, result, networks):
@@ -917,6 +905,7 @@ class WiFiScanner:
         proc = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, encoding='utf-8', errors='replace')
         lines = proc.stdout.splitlines()
+
         networks = []
         matchers = {
             re.compile(r'BSS (\S+)( )?\(on \w+\)'): handle_network,
@@ -942,31 +931,21 @@ class WiFiScanner:
                 if res:
                     handler(line, res, networks)
 
-        # Filtering non-WPS networks
+        # Lọc các network có WPS
         networks = list(filter(lambda x: bool(x['WPS']), networks))
         if not networks:
             return False
 
-        # Sorting by signal level
-        networks.sort(key=lambda x: x['Level'], reverse=True)
-
-        # Putting a list of networks in a dictionary, where each key is a network number in list of networks
+        networks.sort(key=lambda x: x.get('Level', 0), reverse=True)
         network_list = {(i + 1): network for i, network in enumerate(networks)}
 
-        # Printing scanning results as table
         def truncateStr(s, length, postfix='…'):
-            """
-            Truncate string with the specified length
-            @s — input string
-            @length — length of output string
-            """
             if len(s) > length:
                 k = length - len(postfix)
                 s = s[:k] + postfix
             return s
 
         def colored(text, color=None):
-            """Returns colored text"""
             if color:
                 if color == 'green':
                     text = '\033[92m{}\033[00m'.format(text)
@@ -974,10 +953,6 @@ class WiFiScanner:
                     text = '\033[91m{}\033[00m'.format(text)
                 elif color == 'yellow':
                     text = '\033[93m{}\033[00m'.format(text)
-                else:
-                    return text
-            else:
-                return text
             return text
 
         if self.vuln_list:
@@ -987,26 +962,36 @@ class WiFiScanner:
                 colored('WPS locked', color='red'),
                 colored('Already stored', color='yellow')
             ))
+
         print('Networks list:')
         print('{:<4} {:<18} {:<25} {:<8} {:<4} {:<27} {:<}'.format(
             '#', 'BSSID', 'ESSID', 'Sec.', 'PWR', 'WSC device name', 'WSC model'))
 
         network_list_items = list(network_list.items())
-        if args.reverse_scan:
-            network_list_items = network_list_items[::-1]
+
+        # Nếu có args.reverse_scan thì đảo danh sách
+        # Giả sử args được truyền hoặc có thể bỏ qua nếu không dùng
+        # if args.reverse_scan:
+        #     network_list_items = network_list_items[::-1]
+
         for n, network in network_list_items:
             number = f'{n})'
-            model = '{} {}'.format(network['Model'], network['Model number'])
-            essid = truncateStr(network['ESSID'], 25)
-            deviceName = truncateStr(network['Device name'], 27)
+            model = '{} {}'.format(network.get('Model', ''), network.get('Model number', ''))
+            essid = truncateStr(network.get('ESSID', ''), 25)
+            deviceName = truncateStr(network.get('Device name', ''), 27)
             line = '{:<4} {:<18} {:<25} {:<8} {:<4} {:<27} {:<}'.format(
-                number, network['BSSID'], essid,
-                network['Security type'], network['Level'],
-                deviceName, model
-                )
-            if (network['BSSID'], network['ESSID']) in self.stored:
+                number, network.get('BSSID', ''),
+                essid,
+                network.get('Security type', ''),
+                network.get('Level', ''),
+                deviceName, model)
+
+            # Kiểm tra tồn tại ESSID trước khi dùng trong stored
+            bssid = network.get('BSSID', '')
+            essid_check = network.get('ESSID', '')
+            if (bssid, essid_check) in self.stored:
                 print(colored(line, color='yellow'))
-            elif network['WPS locked']:
+            elif network.get('WPS locked', False):
                 print(colored(line, color='red'))
             elif self.vuln_list and (model in self.vuln_list):
                 print(colored(line, color='green'))
@@ -1015,22 +1000,34 @@ class WiFiScanner:
 
         return network_list
 
-    def prompt_network(self) -> str:
+    def prompt_network(self, multi_ap=False, max_targets=3):
         networks = self.iw_scanner()
         if not networks:
             print('[-] No WPS networks found.')
-            return
-        while 1:
-            try:
-                networkNo = input('Select target (press Enter to refresh): ')
-                if networkNo.lower() in ('r', '0', ''):
-                    return self.prompt_network()
-                elif int(networkNo) in networks.keys():
-                    return networks[int(networkNo)]['BSSID']
-                else:
-                    raise IndexError
-            except Exception:
-                print('Invalid number')
+            return None if not multi_ap else []
+
+        if multi_ap:
+            print(f"[*] Selecting up to {max_targets} targets for multi-AP attack...")
+            targets = []
+            for i in range(1, min(max_targets + 1, len(networks) + 1)):
+                target = networks[i].get('BSSID', '')
+                targets.append(target)
+                essid = networks[i].get('ESSID', '')
+                print(f"[+] Added target {i}: {target} (ESSID: {essid})")
+            return targets
+        else:
+            while True:
+                try:
+                    networkNo = input('Select target (press Enter to refresh): ')
+                    if networkNo.lower() in ('r', '0', ''):
+                        return self.prompt_network(multi_ap, max_targets)
+                    elif int(networkNo) in networks.keys():
+                        return networks[int(networkNo)].get('BSSID', '')
+                    else:
+                        raise IndexError
+                except Exception:
+                    print('Invalid number')
+
 
 
 def ifaceUp(iface, down=False):
