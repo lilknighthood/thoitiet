@@ -5,3 +5,9 @@ Crack wps wifi
 ```
 curl -L -o wifi.sh https://raw.githubusercontent.com/lilknighthood/thoitiet/main/wifi.sh
 ```
+```
+chmod +x wifi.sh
+```
+```
+./wifi.sh
+```
