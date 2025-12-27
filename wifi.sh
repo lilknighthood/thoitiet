@@ -1,19 +1,18 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Termux + Android (root) WiFi setup helper for thoitiet repo
-# Ưu tiên chạy: sudo python thoitietv2.py -i <iface> -K
-# Fallback: tsu -- / su -c / chạy thường
 # Usage: bash wifi.sh [-d|--debug] [-i IFACE] [--no-py] [--no-psutil] [--branch BRANCH] [--no-run]
 
 set -Eeuo pipefail
+shopt -s inherit_errexit 2>/dev/null || true
 
 #####################################
 # Màu sắc
 #####################################
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+RED='\u001B[0;31m'
+GREEN='\u001B[0;32m'
+YELLOW='\u001B[1;33m'
+CYAN='\u001B[0;36m'
+NC='\u001B[0m'
 
 #####################################
 # Biến mặc định
@@ -30,12 +29,17 @@ REPO_DIR="thoitiet"
 #####################################
 # Tiện ích in
 #####################################
-info()    { echo -e "${YELLOW}[INFO]${NC} $*"; }
-ok()      { echo -e "${GREEN}[OK]${NC} $*"; }
-warn()    { echo -e "${CYAN}[NOTE]${NC} $*"; }
-err()     { echo -e "${RED}[ERROR]${NC} $*"; }
+info() { echo -e "${YELLOW}[INFO]${NC} $*"; }
+ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
+warn() { echo -e "${CYAN}[NOTE]${NC} $*"; }
+err()  { echo -e "${RED}[ERROR]${NC} $*"; }
 
-trap 'err "Đã xảy ra lỗi ở dòng $LINENO. Dừng lại."' ERR
+on_err() {
+  local code=$?
+  err "Lỗi (exit=$code) tại dòng $LINENO: $BASH_COMMAND"
+  exit "$code"
+}
+trap on_err ERR  # trap + set -E để bắt lỗi trong function/subshell tốt hơn [web:9][web:12]
 
 usage() {
   cat <<EOF
@@ -61,7 +65,6 @@ debug_system() {
   echo "Android:     $(getprop ro.build.version.release 2>/dev/null || echo 'Unknown')"
   echo "Model:       $(getprop ro.product.model 2>/dev/null || echo 'Unknown')"
   echo "Arch:        $(uname -m)"
-  echo "Termux:      ${TERMUX_VERSION:-Unknown}"
   echo "Shell:       $SHELL"
   echo ""
   echo "Root runners:"
@@ -74,6 +77,20 @@ debug_system() {
   command -v ip >/dev/null 2>&1 && echo "  ✅ ip" || echo "  ❌ ip"
   command -v wpa_supplicant >/dev/null 2>&1 && echo "  ✅ wpa_supplicant" || echo "  ❌ wpa_supplicant"
   echo ""
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || { err "Thiếu command: $1"; exit 1; }
+}
+
+validate_iface() {
+  if [[ -z "${IFACE}" ]]; then
+    err "IFACE rỗng."
+    exit 1
+  fi
+  if command -v ip >/dev/null 2>&1; then
+    ip link show "$IFACE" >/dev/null 2>&1 || warn "Không thấy interface '$IFACE' (vẫn tiếp tục vì có thể xuất hiện sau)."
+  fi
 }
 
 #####################################
@@ -93,29 +110,43 @@ while (( "$#" )); do
 done
 
 #####################################
-# Cập nhật & cài package
+# Cập nhật & cài package (non-interactive)
 #####################################
+apt_install() {
+  # Termux maintainer: script non-interactive nên ưu tiên apt-get hơn pkg [web:5]
+  local pkgs=("$@")
+  DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 || true
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold" \
+    "${pkgs[@]}" >/dev/null 2>&1
+}
+
 update_and_install() {
-  info "Cập nhật gói của Termux..."
-  yes | pkg update >/dev/null 2>&1 || true
-  yes | pkg upgrade >/dev/null 2>&1 || true
+  require_cmd apt-get
+
+  info "Cập nhật packages (apt-get, non-interactive)..."
+  DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 || true
+  DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold" >/dev/null 2>&1 || true
 
   local base_pkgs=(root-repo git tsu python openssl libffi libcrypt clang make pkg-config unzip wget curl iproute2)
   local net_pkgs=(wpa-supplicant pixiewps iw)
   local all_pkgs=("${base_pkgs[@]}" "${net_pkgs[@]}")
 
   info "Cài packages cần thiết..."
-  if ! pkg install -y "${all_pkgs[@]}" >/dev/null 2>&1; then
+  if apt_install "${all_pkgs[@]}"; then
+    ok "Cài packages hoàn tất"
+  else
     warn "Cài hàng loạt thất bại, sẽ cài lần lượt:"
     for p in "${all_pkgs[@]}"; do
-      if pkg install -y "$p" >/dev/null 2>&1; then
+      if apt_install "$p"; then
         echo "  ✅ $p"
       else
         echo "  ❌ $p (bỏ qua nếu không cần)"
       fi
     done
-  else
-    ok "Cài packages hoàn tất"
   fi
 }
 
@@ -128,6 +159,8 @@ install_python_deps() {
     return 0
   fi
 
+  require_cmd python
+
   info "Nâng cấp pip / setuptools / wheel..."
   python -m pip install --upgrade pip setuptools wheel >/dev/null 2>&1 || true
 
@@ -136,16 +169,15 @@ install_python_deps() {
     ok "pycryptodome OK"
   else
     warn "pycryptodome bản mới lỗi, thử phiên bản cố định..."
-    python -m pip install pycryptodome==3.15.0 >/dev/null 2>&1 || warn "Không cài được pycryptodome"
+    python -m pip install --no-cache-dir pycryptodome==3.15.0 >/dev/null 2>&1 || warn "Không cài được pycryptodome"
   fi
 
   if $INSTALL_PSUTIL; then
     info "Cài psutil..."
-    export CC=clang
-    export CXX=clang++
-    export CFLAGS="-I$PREFIX/include"
-    export CXXFLAGS="-I$PREFIX/include"
+    export CC=clang CXX=clang++
+    export CFLAGS="-I$PREFIX/include" CXXFLAGS="-I$PREFIX/include"
     export LDFLAGS="-L$PREFIX/lib"
+
     if python -m pip install --only-binary=:all: psutil >/dev/null 2>&1; then
       ok "psutil (wheel) OK"
     elif python -m pip install --no-cache-dir psutil >/dev/null 2>&1; then
@@ -162,6 +194,8 @@ install_python_deps() {
 # Clone/Update repo
 #####################################
 sync_repo() {
+  require_cmd git
+
   if [ ! -d "$REPO_DIR/.git" ]; then
     info "Clone repository $REPO_URL ..."
     if git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$REPO_DIR" >/dev/null 2>&1; then
@@ -176,6 +210,7 @@ sync_repo() {
       fi
       unzip -q "$zipfile"
       rm -f "$zipfile"
+      rm -rf "$REPO_DIR"
       mv "thoitiet-${BRANCH}" "$REPO_DIR"
       ok "Tải ZIP & giải nén thành công"
     fi
@@ -191,7 +226,36 @@ sync_repo() {
 }
 
 #####################################
-# Chạy tool sau khi cài (ưu tiên sudo)
+# Root runner (gom logic sudo/tsu/su)
+#####################################
+pick_runner() {
+  if command -v sudo >/dev/null 2>&1; then
+    echo "sudo"
+    return 0
+  fi
+  if command -v tsu >/dev/null 2>&1; then
+    echo "tsu"
+    return 0
+  fi
+  if command -v su >/dev/null 2>&1; then
+    echo "su"
+    return 0
+  fi
+  echo "none"
+}
+
+run_as_root() {
+  local runner="$1"; shift
+  case "$runner" in
+    sudo) sudo "$@";;
+    tsu)  tsu -- "$@";;  # tsu là wrapper cho su trong Termux [web:16]
+    su)   su -c "sh -lc '$*'";;  # giữ cwd/PATH ổn định
+    none) "$@";;
+  esac
+}
+
+#####################################
+# Chạy tool sau khi cài
 #####################################
 run_tool() {
   if ! $RUN_AFTER_INSTALL; then
@@ -206,47 +270,17 @@ run_tool() {
     return 0
   fi
 
+  local runner
+  runner="$(pick_runner)"
+
   pushd "$REPO_DIR" >/dev/null
-
-  info "Thử chạy bằng sudo (ưu tiên theo yêu cầu)..."
-  if command -v sudo >/dev/null 2>&1; then
-    if sudo python thoitietv2.py -i "${IFACE}" -K; then
-      ok "Chạy bằng sudo thành công."
-      popd >/dev/null
-      return 0
+    info "Chạy tool (runner=$runner)..."
+    if run_as_root "$runner" python thoitietv2.py -i "${IFACE}" -K; then
+      ok "Chạy thành công."
     else
-      warn "Chạy bằng sudo thất bại. Thử phương án khác..."
+      warn "Chạy thất bại với runner=$runner. Thử chạy thường..."
+      python thoitietv2.py -i "${IFACE}" -K || warn "Chạy thường cũng thất bại."
     fi
-  else
-    warn "Không có sudo trong Termux. Sẽ thử tsu / su."
-  fi
-
-  info "Thử chạy bằng tsu -- ..."
-  if command -v tsu >/dev/null 2>&1; then
-    if tsu -- python thoitietv2.py -i "${IFACE}" -K; then
-      ok "Chạy bằng tsu thành công."
-      popd >/dev/null
-      return 0
-    else
-      warn "Chạy bằng tsu thất bại."
-    fi
-  fi
-
-  info "Thử chạy bằng su -c ..."
-  if command -v su >/dev/null 2>&1; then
-    # dùng sh -lc để đảm bảo PATH & cwd
-    if su -c "sh -lc 'cd $(pwd) && python thoitietv2.py -i ${IFACE} -K'"; then
-      ok "Chạy bằng su -c thành công."
-      popd >/dev/null
-      return 0
-    else
-      warn "Chạy bằng su -c thất bại."
-    fi
-  fi
-
-  warn "Không có sudo/tsu/su hoặc tất cả đều lỗi. Thử chạy không root (có thể thiếu quyền)..."
-  python thoitietv2.py -i "${IFACE}" -K || warn "Chạy thường cũng thất bại."
-
   popd >/dev/null
 }
 
@@ -255,6 +289,7 @@ run_tool() {
 #####################################
 echo -e "${GREEN}=== Bắt đầu cài đặt WiFi Tool cho Termux ===${NC}"
 $DEBUG && debug_system
+validate_iface
 update_and_install
 install_python_deps
 sync_repo
