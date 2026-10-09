@@ -172,22 +172,33 @@ install_python_deps() {
     python -m pip install --no-cache-dir pycryptodome==3.15.0 >/dev/null 2>&1 || warn "Không cài được pycryptodome"
   fi
 
-  if $INSTALL_PSUTIL; then
-    info "Cài psutil..."
-    export CC=clang CXX=clang++
-    export CFLAGS="-I$PREFIX/include" CXXFLAGS="-I$PREFIX/include"
-    export LDFLAGS="-L$PREFIX/lib"
+ if $INSTALL_PSUTIL; then
+   info "Cài psutil..."
+   
+   # Kiểm tra nếu đang chạy trên Termux (có lệnh pkg)
+   if command -v pkg >/dev/null 2>&1; then
+     if pkg install -y python-psutil >/dev/null 2>&1; then
+       ok "psutil (pkg Termux) OK"
+     else
+       warn "Không cài được psutil qua pkg. Tiếp tục không có psutil."
+     fi
+   else
+     # Fallback lại cách dùng pip cho các môi trường Linux khác
+     export CC=clang CXX=clang++
+     export CFLAGS="-I$PREFIX/include" CXXFLAGS="-I$PREFIX/include"
+     export LDFLAGS="-L$PREFIX/lib"
 
-    if python -m pip install --only-binary=:all: psutil >/dev/null 2>&1; then
-      ok "psutil (wheel) OK"
-    elif python -m pip install --no-cache-dir psutil >/dev/null 2>&1; then
-      ok "psutil (build) OK"
-    else
-      warn "Không cài được psutil. Tiếp tục không có psutil."
-    fi
-  else
-    warn "Bỏ qua psutil (--no-psutil)."
-  fi
+     if python -m pip install --only-binary=:all: psutil >/dev/null 2>&1; then
+       ok "psutil (wheel) OK"
+     elif python -m pip install --no-cache-dir psutil >/dev/null 2>&1; then
+       ok "psutil (build) OK"
+     else
+       warn "Không cài được psutil. Tiếp tục không có psutil."
+     fi
+   fi
+ else
+   warn "Bỏ qua psutil (--no-psutil)."
+ fi
 }
 
 #####################################
